@@ -1,15 +1,15 @@
-##Сервис обмена данными с коечным фондом КК
+## Сервис обмена данными с коечным фондом КК
 
-#####1. Определение дистрибутива Linux
+##### 1. Определение дистрибутива Linux
 ```shell script
 uname -a; lsb_release -a; cat /etc/*release
 ```
-#####2. Подключаемся в серверу
+##### 2. Подключаемся в серверу
 ```shell script
 ssh  root@192.168.0.3
 # пароль: ******
 ```
-#####3. Проверяем, есть ли весия python 3.5
+##### 3. Проверяем, есть ли весия python 3.5
 ```shell script
 which python
 ls -la /usr/bin/ | grep python
@@ -23,14 +23,14 @@ yum update
 # Если нет, устанавливаем python 3.5.9 по инструкции для Ubuntu: https://tecadmin.net/install-python-3-5-on-ubuntu/
 # Для Fedora https://tecadmin.net/install-python-3-5-on-centos/
 ```
-#####4. Установка приложения
+##### 4. Установка приложения
 ```shell script
 cd /var/www/html/
 svn co --username arkkav svn://192.168.0.3/s11/appendix/n3bedsKK
 # пароль: ******
 cd ./n3bedsKK
 ```
-#####5. Настройка виртуального окружения
+##### 5. Настройка виртуального окружения
 ```shell script
 virtualenv venv -p $(which python3.5)
 . venv/bin/activate
@@ -45,14 +45,14 @@ scp -r /home/vista/PycharmProjects/111/wheels root@192.168.0.3:/var/www/html/n3b
 # на сервере:
 pip install --no-index /var/www/html/n3bedsKK/wheels/*
 ```
-#####6. База данных
+##### 6. База данных
 ```shell script
 mysql
 CREATE SCHEMA IF NOT EXISTS logger;
 # здесь применяем SQL из папки dbupdate
 exit
 ```
-#####7. Настройки config.py
+##### 7. Настройки config.py
 ```shell script
 nano config.py
 ```
@@ -61,7 +61,7 @@ DB_LOGGER - базу, куда собираем информацию (адрес
 ORGANISATION - организация из справочника 1.2.643.2.69.1.1.1.64, по который собираем информацию\
 DEBUG = True - режим отладки\
 REGION - регион сервиса netrica
-#####8. Сервер в systemd
+##### 8. Сервер в systemd
 ```shell script
 touch /etc/systemd/system/vservice_bedsfund_server.service
 chmod 664 /etc/systemd/system/vservice_bedsfund_server.service
@@ -84,7 +84,7 @@ WorkingDirectory=/var/www/html/n3bedsKK
 [Install]
 WantedBy=multi-user.target
 ```
-#####9. Сборщика информации в systemd
+##### 9. Сборщика информации в systemd
 ```shell script
 touch /etc/systemd/system/vservice_bedsfund_collector.service
 chmod 664 /etc/systemd/system/vservice_bedsfund_collector.service
@@ -107,7 +107,7 @@ ExecStart=/var/www/html/n3bedsKK/venv/bin/python3 /var/www/html/n3bedsKK/exchang
 [Install]
 WantedBy=multi-user.target
 ```
-#####10. Таймер для сборщика в systemd
+##### 10. Таймер для сборщика в systemd
 ```shell script
 touch /etc/systemd/system/vservice_bedsfund_collector.timer
 chmod 664 /etc/systemd/system/vservice_bedsfund_collector.timer
@@ -125,7 +125,7 @@ OnCalendar=*:0/15
 [Install]
 WantedBy=timers.target
 ```
-#####11. Настройка сети
+##### 11. Настройка сети
 Добавяем правила для таблиц маршрутизации, чтоб открыть эти порты для трафика (в Feroda и CentOS по-умолчанию весь трафик блокируется):
 ```shell script
 nano /etc/sysconfig/iptables
@@ -137,7 +137,7 @@ nano /etc/sysconfig/iptables
 ```shell script
 rd
 ```
-#####12. Запускаем сервисы
+##### 12. Запускаем сервисы
 ```shell script
 systemctl daemon-reload
 systemctl enable vservice_bedsfund_collector.timer
@@ -145,7 +145,7 @@ systemctl enable vservice_bedsfund_server.service
 systemctl start vservice_bedsfund_collector.timer
 systemctl start vservice_bedsfund_server.service
 ```
-#####13. Проверка работы сервиса
+##### 13. Проверка работы сервиса
 Запускаем сбор информации:
 ```shell script
 /var/www/html/n3bedsKK/venv/bin/python3.5 exchange.py -c
