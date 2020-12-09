@@ -19,7 +19,7 @@ REGION = REGION_SPB
 N3_AUTHORIZATION_TOKEN = {
     REGION_SPB: (
         '',                                      # Реальный - ???
-        '0d88e2fe-fbba-484c-a1e3-d34afa62b1fb'   # Тестовый
+        ''   # Тестовый
     ),
     REGION_KK : (
         '',                                      # Реальный - ???
