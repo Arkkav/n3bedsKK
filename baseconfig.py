@@ -18,26 +18,26 @@ REGION = REGION_SPB
 # Токен авторизации
 N3_AUTHORIZATION_TOKEN = {
     REGION_SPB: (
-        '',                                      # Реальный - ???
-        ''   # Тестовый
+        '',                                      # Реальный
+        ''                                       # Тестовый
     ),
     REGION_KK : (
-        '',                                      # Реальный - ???
-        ''                                       # Тестовый - ???
+        '',                                      # Реальный
+        ''                                       # Тестовый
     )
 }
 
 # Адрес сервиса
 SERVICE_URL = {
     REGION_SPB: (
-        '',     # Реальный
-        'http://r23-rc.zdrav.netrika.ru/bedservice/_api/'  # Тестовый
+        '',                                                 # Реальный
+        'http://r23-rc.zdrav.netrika.ru/bedservice/_api/'   # Тестовый
     ),
     REGION_KK: (
-        '',         # Реальный
-        ''  # Тестовый
+        '',                                                 # Реальный
+        ''                                                  # Тестовый
     )
 }
 
-LOGGER_DB_NAME = 'logger' # Название базы логгера
+LOGGER_DB_NAME = 'logger'                                   # Название базы логгера
 LOG_FILE_NAME = 'log.log'
