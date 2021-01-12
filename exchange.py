@@ -57,15 +57,31 @@ query_netrica_code_count = \
     '''
 
 query_counts_on_date = \
-    ''' 
-        select *
-        from {logger_table}
-        where
-              org_netrica_code = '{org_netrica_code}'
-              and createDatetime =
-                  (select createDatetime
-                  from logger.NetricaBedsExchange
-                  where createDatetime > '{start_date}' limit 1);
+    '''
+        select id,
+               netrica_id,
+               createDatetime,
+               modifyDatetime,
+               netricaBed_code,
+               count(orgStructure_id) as os_count,
+               org_netrica_code,
+               sum(TotalBedCount) as TotalBedCount,
+               sum(FreeBedCount) as FreeBedCount,
+               sum(FreeBedCountMale) as FreeBedCountMale,
+               sum(FreeBedCountFemale) as FreeBedCountFemale,
+               sum(FreeBedCountChild) as FreeBedCountChild,
+               sum(AccompPersonCount) as AccompPersonCount,
+               sum(OccupiedBedCount) as OccupiedBedCount,
+               sum(PrevDayOccupiedBedCount) as PrevDayOccupiedBedCount,
+               sum(BedCountOnRepair) as BedCountOnRepair
+        from logger.NetricaBedsExchange
+        where org_netrica_code = '5a358952-350b-4be0-b0b4-cc960dcde02b'
+          and createDatetime =
+              (select createDatetime
+               from logger.NetricaBedsExchange
+               where createDatetime > '2020-11-27 11:04:35'
+               limit 1)
+        group by netricaBed_code;
     '''
 
 
@@ -395,17 +411,15 @@ class CBedsExchange(object):
             cur.execute(query)
             records = cur.fetchall()
         records = records_to_dict_list(records, ['bed_netrica_Code', 'org_netrica_Code', 'net_id', 'orgStructure_id'])
-        if records:
-            org_structure_id = int(records[0].get('orgStructure_id'))
-            # количество детских коек смотрим по OrgStructure.net_id, т.к. age не заполняется
-            net_id = records[0].get('net_id')
-            self.logger.debug(u'Подраздеделие: ' + config.ORGANISATION)
-        else:
+        if not records:
             self.logger.debug(u'Записи о койках отсутствуют для подразделения: ' + config.ORGANISATION)
             return None
         for rec in records:
             bed_netrica_code = int(rec.get('bed_netrica_Code'))
-            self.logger.debug(u'Код профиля коек: ' + str(bed_netrica_code))
+            org_structure_id = int(rec.get('orgStructure_id'))
+            # количество детских коек смотрим по OrgStructure.net_id, т.к. age не заполняется
+            net_id = rec.get('net_id')
+            self.logger.debug(u'Код профиля коек: ' + str(bed_netrica_code) + u', подраздеделие: ' + str(org_structure_id))
             insert_cols = {
                 'netrica_id': "''",
                 'orgStructure_id': str(org_structure_id),
@@ -463,7 +477,8 @@ class CBedsExchange(object):
         db = self.db_logger
         query = query_counts_on_date.format(logger_table=get_logger_table_name(), org_netrica_code=config.ORGANISATION,
                                             start_date=date_str)
-        columns = ['id', 'netrica_id', 'createDatetime', 'modifyDatetime', 'netricaBed_code', 'orgStructure_id',
+        # колона os_count, потому что для нескольких подразделений м.б. несколько кодов коек (group by)
+        columns = ['id', 'netrica_id', 'createDatetime', 'modifyDatetime', 'netricaBed_code', 'os_count',
                    'org_netrica_code', ]
         columns.extend(self.cdf['json_names'])
         with db.cursor() as cur:
@@ -474,7 +489,6 @@ class CBedsExchange(object):
             date_utc = records[0].get('createDatetime') - self.td
             date_utc = date_utc.replace(tzinfo=pytz.FixedOffset(0))
             date_utc = date_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-            self.logger.debug(u'Подраздеделие: ' + config.ORGANISATION)
         else:
             self.logger.debug(
                 u'Записи отсутствуют после даты ' + date_str + u' (местное время)')
