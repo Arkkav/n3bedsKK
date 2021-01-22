@@ -8,7 +8,8 @@ app = Flask(__name__)
 @app.route('/')
 def get_start_date():
     start_date = request.args.get('start_date', '')
-    status = wsgi_app(start_date)
+    netrica_codes = request.args.get('guids', '')
+    status = wsgi_app(start_date, netrica_codes)
     content = b""
     resp = make_response(content, status)
     resp.headers['Content-type'] = 'text/plain'

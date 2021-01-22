@@ -3,7 +3,9 @@ from baseconfig import *
 
 REGION = REGION_SPB
 DEBUG = True
-ORGANISATION = '5a358952-350b-4be0-b0b4-cc960dcde02b'
+ORGANISATIONS = {'5a358952-350b-4be0-b0b4-cc960dcde02b',
+                 'a5a9e893-3aef-443f-8289-d45a995bddee',
+                 }  # список подразделений
 
 DB_CONNECTION_INFO = {
     "host": "192.168.0.204",

@@ -1,0 +1,2 @@
+ALTER TABLE logger.NetricaBedsExchange CHANGE COLUMN org_netrica_code os_netrica_code varchar(40);
+ALTER TABLE logger.NetricaBedsExchange ADD COLUMN org_netrica_code varchar(40) not null comment 'Код нетрики организации (не подразделения)' AFTER os_netrica_code;

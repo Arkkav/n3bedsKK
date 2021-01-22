@@ -1,8 +1,6 @@
 import sys
 import os
 import logging
-
-sys.path.append('/home/vista/PycharmProjects/s11')
 global_logger = None
 
 
@@ -15,6 +13,12 @@ def get_logger():
         handler.setFormatter(formatter)
         global_logger.addHandler(handler)
         global_logger.setLevel(logging.DEBUG)
+        urllib3 = logging.getLogger("urllib3.connectionpool")
+        for hdlr in urllib3.handlers[:]:
+            if isinstance(hdlr, logging.FileHandler):
+                urllib3.removeHandler(hdlr)
+        urllib3.addHandler(handler)
+        urllib3.setLevel(logging.DEBUG)
     return global_logger
 
 
@@ -47,24 +51,24 @@ statuses_type = {200: u'Успешный ответ',
 # Коды профилей койк для данной OrgStructure (сколько resource вставляем в entry)
 query_netrica_code_count = \
     '''        
-        select hbp.netrica_Code as bed_netrica_Code, os.netrica_Code as org_netrica_Code,
-        os.net_id as net_id, os.id as orgStructure_id
+        select hbp.netrica_Code as bed_netrica_Code, os.netrica_Code as os_netrica_code,
+        os.net_id as net_id, os.id as orgStructure_id, org.netrica_Code as org_netrica_code
         from OrgStructure_HospitalBed as oshb
             join OrgStructure as os on oshb.master_id = os.id
             join rbHospitalBedProfile as hbp on hbp.id = oshb.profile_id
-        where os.netrica_Code = '{org_netrica_code}'
-        group by bed_netrica_Code;
+            left join Organisation org on org.id = os.organisation_id
+        where os.netrica_Code = '{os_netrica_code}'
+        and oshb.isPermanent = 1
+        group by os.id;
     '''
 
+# суммирукем, потому что на один netricaBed_code несколько orgStructure_id
 query_counts_on_date = \
     '''
-        select id,
-               netrica_id,
+        select netrica_id,
                createDatetime,
-               modifyDatetime,
                netricaBed_code,
-               count(orgStructure_id) as os_count,
-               org_netrica_code,
+               os_netrica_code,
                sum(TotalBedCount) as TotalBedCount,
                sum(FreeBedCount) as FreeBedCount,
                sum(FreeBedCountMale) as FreeBedCountMale,
@@ -74,13 +78,15 @@ query_counts_on_date = \
                sum(OccupiedBedCount) as OccupiedBedCount,
                sum(PrevDayOccupiedBedCount) as PrevDayOccupiedBedCount,
                sum(BedCountOnRepair) as BedCountOnRepair
-        from logger.NetricaBedsExchange
-        where org_netrica_code = '5a358952-350b-4be0-b0b4-cc960dcde02b'
-          and createDatetime =
+        from {logger_table}
+        where
+           createDatetime =
               (select createDatetime
                from logger.NetricaBedsExchange
-               where createDatetime > '2020-11-27 11:04:35'
+               where createDatetime >= '{start_date}'
+               {os_netrica_code_cond}
                limit 1)
+            {os_netrica_code_cond}
         group by netricaBed_code;
     '''
 
@@ -197,7 +203,8 @@ class CBedsExchange(object):
                     join rbHospitalBedProfile as hbp on hbp.id = oshb.profile_id
                 where
                 os.id = {OrgStructure_id}
-                AND hbp.netrica_Code = {netrica_Code};
+                AND oshb.isPermanent = 1
+                AND hbp.netrica_Code = {netrica_bed_Code};
             ''',
             # Общее количество свободных коек
             '''
@@ -208,7 +215,7 @@ class CBedsExchange(object):
                 where
                     os.id = {OrgStructure_id}
                     AND isPermanent = 1
-                    AND hbp.netrica_Code = {netrica_Code}
+                    AND hbp.netrica_Code = {netrica_bed_Code}
                     AND NOT isHospitalBedBusy(oshb.id, STR_TO_DATE('{date}', '%Y-%m-%dT%H:%i:%s'));
             ''',
             # Незанятых мужских коек
@@ -220,7 +227,7 @@ class CBedsExchange(object):
                 where
                     os.id = {OrgStructure_id}
                     AND isPermanent = 1
-                    AND hbp.netrica_Code = {netrica_Code}
+                    AND hbp.netrica_Code = {netrica_bed_Code}
                     AND NOT oshb.age = '0-17'
                     AND oshb.sex = 1
                     AND NOT isHospitalBedBusy(oshb.id, STR_TO_DATE('{date}', '%Y-%m-%dT%H:%i:%s'));
@@ -234,7 +241,7 @@ class CBedsExchange(object):
                 where
                     os.id = {OrgStructure_id}
                     AND isPermanent = 1
-                    AND hbp.netrica_Code = {netrica_Code}
+                    AND hbp.netrica_Code = {netrica_bed_Code}
                     AND NOT oshb.age='0-17'
                     AND oshb.sex=2
                     AND NOT isHospitalBedBusy(oshb.id, STR_TO_DATE('{date}', '%Y-%m-%dT%H:%i:%s'));
@@ -248,12 +255,13 @@ class CBedsExchange(object):
             #     where
             #         os.id = {OrgStructure_id}
             #         AND isPermanent = 1
-            #         AND hbp.netrica_Code = {netrica_Code}
+            #         AND hbp.netrica_Code = {netrica_bed_Code}
             #         AND oshb.age='0-17'
             #         AND NOT oshb.age IS NULL
             #         AND NOT oshb.age = ''
             #         AND NOT isHospitalBedBusy(oshb.id, STR_TO_DATE('{date}', '%Y-%m-%dT%H:%i:%s'));
             # ''',
+            # просто количество незанятых коек еще раз
             '''
                 select count(*)
                 from OrgStructure_HospitalBed as oshb
@@ -262,7 +270,7 @@ class CBedsExchange(object):
                 where
                     os.id = {OrgStructure_id}
                     AND isPermanent = 1
-                    AND hbp.netrica_Code = {netrica_Code}
+                    AND hbp.netrica_Code = {netrica_bed_Code}
                     AND NOT isHospitalBedBusy(oshb.id, STR_TO_DATE('{date}', '%Y-%m-%dT%H:%i:%s'));
             ''',
             # Количество сопровождающих при больных детях
@@ -280,7 +288,7 @@ class CBedsExchange(object):
                     CURRENT_DATE <= DATE_ADD(c.birthDate, INTERVAL 4 YEAR)
                     AND os.id = {OrgStructure_id}
                     AND isPermanent = 1
-                    AND hbp.netrica_Code = {netrica_Code}
+                    AND hbp.netrica_Code = {netrica_bed_Code}
                     AND isHospitalBedBusy(oshb.id, STR_TO_DATE('{date}', '%Y-%m-%dT%H:%i:%s'));
             ''',
             # Количество занятых коек на начало текущих суток
@@ -290,8 +298,9 @@ class CBedsExchange(object):
                     join OrgStructure as os on oshb.master_id = os.id
                     join rbHospitalBedProfile as hbp on hbp.id = oshb.profile_id
                 where
-                    os.id = {OrgStructure_id} AND
-                    isHospitalBedBusy(oshb.id, DATE_ADD(CURDATE(), INTERVAL "00:00:00" HOUR_SECOND));
+                    os.id = {OrgStructure_id} 
+                    AND oshb.isPermanent = 1
+                    AND isHospitalBedBusy(oshb.id, DATE_ADD(CURDATE(), INTERVAL "00:00:00" HOUR_SECOND));
             ''',
             # Количество занятых коек на начало истекших суток
             '''
@@ -300,8 +309,9 @@ class CBedsExchange(object):
                     join OrgStructure as os on oshb.master_id = os.id
                     join rbHospitalBedProfile as hbp on hbp.id = oshb.profile_id
                 where
-                    os.id = {OrgStructure_id} AND
-                    isHospitalBedBusy(oshb.id, DATE_ADD(CURDATE(), INTERVAL "-1 00:00:00" DAY_SECOND));
+                    os.id = {OrgStructure_id}
+                    AND oshb.isPermanent = 1
+                    AND isHospitalBedBusy(oshb.id, DATE_ADD(CURDATE(), INTERVAL "-1 00:00:00" DAY_SECOND));
             ''',
             # Количество закрытых на ремонт коек
             '''
@@ -311,8 +321,9 @@ class CBedsExchange(object):
                     left join rbHospitalBedProfile as hbp on hbp.id = oshb.profile_id
                     left join HospitalBed_Involute as hi on hi.master_id = oshb.id
                 where hi.involuteType = 1
+                    AND oshb.isPermanent = 1
                     AND os.id = {OrgStructure_id}
-                    AND hbp.netrica_Code = {netrica_Code}
+                    AND hbp.netrica_Code = {netrica_bed_Code}
                     AND (hi.begDateInvolute IS NULL
                         OR hi.begDateInvolute <= STR_TO_DATE('{date}', '%Y-%m-%dT%H:%i:%s'))
                     AND (hi.endDateInvolute IS NULL
@@ -321,7 +332,7 @@ class CBedsExchange(object):
         ]
         return Dataframe(columns, values, queries, json_names)
 
-    def save_id_to_db(self, result_json):
+    def save_id_to_db(self, result_json, os_netrica_code):
         # функция обрабатывает пришедший из нетрики json с датами в UTC и записывает в базу logger
         self.logger.debug(u'Запись данных в базу данных ' + config.LOGGER_DB_NAME)
         return_flag = 1
@@ -329,7 +340,6 @@ class CBedsExchange(object):
             db = self.db_logger
             for resource in result_json['entry']:
                 netrica_id = resource['resource']['id']
-                org_netrica_code = config.ORGANISATION
                 netrica_bed_code = str(
                     resource['resource']['characteristic'][0]['coding'][0]['code'])
                 start_date = datetime.strptime(resource['resource']['extension'][-1]['valuePeriod']['start'],
@@ -342,12 +352,12 @@ class CBedsExchange(object):
                     FROM {logger_table}
                     WHERE netricaBed_code = '{netricaBed_code}'
                            and createDatetime = '{start_date}'
-                           and org_netrica_code = '{org_netrica_code}';
+                           and os_netrica_code = '{os_netrica_code}';
                         '''.format(
                     logger_table=get_logger_table_name(),
                     netricaBed_code=netrica_bed_code,
                     start_date=start_date_local,
-                    org_netrica_code=org_netrica_code)
+                    os_netrica_code=os_netrica_code)
                 with db.cursor() as cur:
                     cur.execute(query)
                     record = cur.fetchone()
@@ -359,14 +369,14 @@ class CBedsExchange(object):
                             SET modifyDatetime = '{current_date}', netrica_id = '{netrica_id}'
                             WHERE netricaBed_code = '{netricaBed_code}'
                                and createDatetime = '{start_date}'
-                               and org_netrica_code = '{org_netrica_code}';
+                               and os_netrica_code = '{os_netrica_code}';
                         '''.format(
                             current_date=now_in_db(db).strftime("%Y-%m-%dT%H:%M:%S"),
                             netrica_id=netrica_id,
                             logger_table=get_logger_table_name(),
                             netricaBed_code=netrica_bed_code,
                             start_date=start_date_local,
-                            org_netrica_code=org_netrica_code)
+                            os_netrica_code=os_netrica_code)
                         cur.execute(query)
                     db.commit()
                     self.logger.debug(u'Запись с id = ' + netrica_id + u' обновлена')
@@ -374,8 +384,8 @@ class CBedsExchange(object):
                     return_flag = 0
                     self.logger.debug(u'В таблице ' + get_logger_table_name() + \
                                       u' нет записи с netrica_id = ' + \
-                                      str(netrica_id) + u', org_netrica_code = ' + \
-                                      org_netrica_code + u', createDatetime = ' + start_date_local)
+                                      str(netrica_id) + u', os_netrica_code = ' + \
+                                      os_netrica_code + u', createDatetime = ' + start_date_local)
         except Exception as e:
             self.logger.error(u'Ошибка записи в базу данных')
             self.logger.error(str(e.args))
@@ -390,15 +400,25 @@ class CBedsExchange(object):
         headers = {'Content-Type': 'application/fhir+json', 'Authorization': 'N3 ' + config.AUTH_TOKEN, }
         data = json.dumps(json_data)
         response = requests.post(config.URL + config.BUNDLE_RESOURCE, data=data, headers=headers)
-        # print(json.dumps(response.json(), indent=4))
-        # print(json.dumps(dict(response.headers), indent=4))
-        # print(r.raise_for_status())
-        self.logger.debug(statuses_type[response.status_code])
-        return response.json()
+        # self.logger.debug(json_data)
+        # self.logger.debug(str(json.dumps(response.json(), indent=4)))
+        try:
+            if response.status_code == 200:
+                return response.json()
+            else:
+                self.logger.debug('Ошибка обмена:')
+                self.logger.debug(response.json().get('issue')[0].get('details').get('text'))
+                return
+        except:
+            self.logger.debug(str(json.dumps(response.json(), indent=4)))
+            return
 
-    def save_info_to_logger_db(self):
+
+    def save_info_to_logger_db(self, os_netrica_code):
         u"""
-            функция записывает данные из базы в базу logger
+            функция логирует данные из базы в базу logger для одного заданного guid в таблице orgStructure.
+            В итоге в таблице логгера для одного guid может быть много orgStructure_id.
+            Записываем по не по guid, а еще и по orgStructure_id, потому что нужен net_id.
         :return: None
         """
         self.logger.debug(u'Запрос данных из базы')
@@ -406,27 +426,32 @@ class CBedsExchange(object):
         date = now_in_db(db)
         date = date.strftime('%Y-%m-%dT%H:%M:%S')
         db_logger = self.db_logger
-        query = query_netrica_code_count.format(org_netrica_code=config.ORGANISATION)
+        query = query_netrica_code_count.format(os_netrica_code=os_netrica_code)
         with db.cursor() as cur:
             cur.execute(query)
             records = cur.fetchall()
-        records = records_to_dict_list(records, ['bed_netrica_Code', 'org_netrica_Code', 'net_id', 'orgStructure_id'])
+        records = records_to_dict_list(records, ['bed_netrica_Code', 'os_netrica_code', 'net_id', 'orgStructure_id',
+                                                 'org_netrica_code'])
         if not records:
-            self.logger.debug(u'Записи о койках отсутствуют для подразделения: ' + config.ORGANISATION)
+            self.logger.debug(u'Записи о койках отсутствуют для подразделения: ' + os_netrica_code)
             return None
+        else:
+            self.logger.debug(u'Записи для guid: ' + os_netrica_code)
         for rec in records:
             bed_netrica_code = int(rec.get('bed_netrica_Code'))
             org_structure_id = int(rec.get('orgStructure_id'))
+            org_netrica_code = str(rec.get('org_netrica_code'))
             # количество детских коек смотрим по OrgStructure.net_id, т.к. age не заполняется
             net_id = rec.get('net_id')
             self.logger.debug(u'Код профиля коек: ' + str(bed_netrica_code) + u', подраздеделие: ' + str(org_structure_id))
             insert_cols = {
                 'netrica_id': "''",
                 'orgStructure_id': str(org_structure_id),
-                'org_netrica_code': "'" + str(config.ORGANISATION) + "'",
+                'os_netrica_code': "'" + str(os_netrica_code) + "'",
                 'netricaBed_code': "'" + str(bed_netrica_code) + "'",
                 'createDatetime': "'" + date + "'",
                 'modifyDatetime': "'" + date + "'",
+                'org_netrica_code': "'" + org_netrica_code + "'",
             }
             msg_list = []
             for j in range(len(self.cdf['json_names'])):
@@ -436,7 +461,7 @@ class CBedsExchange(object):
                     count = 0
                 else:
                     query = self.cdf['queries'][j].format(
-                        OrgStructure_id=org_structure_id, netrica_Code=bed_netrica_code, date=date)
+                        OrgStructure_id=org_structure_id, netrica_bed_Code=bed_netrica_code, date=date)
                     with db.cursor() as cur:
                         cur.execute(query)
                         count = cur.fetchone()[0]
@@ -463,9 +488,9 @@ class CBedsExchange(object):
             else:
                 self.logger.debug(u'Запись успешно сохранена')
 
-    def get_beds_info(self, date):
+    def get_beds_info(self, date, os_netrica_code):
         u"""
-            собирает данные из таблицы логгера в json
+            Собирает данные из таблицы логгера в json по одному os_netrica_code.
         :param date: дата в локальном времени, тип Datetime
         :return: словарь объектов нетрики
         """
@@ -473,13 +498,14 @@ class CBedsExchange(object):
             self.logger.info(u'Дата не должна отличаться от текущей больше, чем на сутки')
             return None
         date_str = date.strftime("%Y-%m-%dT%H:%M:%S")
-        self.logger.debug(u'Запрос данных из базы')
+        self.logger.debug(u'Запрос из логгера данных для подразделения: ' + os_netrica_code)
         db = self.db_logger
-        query = query_counts_on_date.format(logger_table=get_logger_table_name(), org_netrica_code=config.ORGANISATION,
+        os_netrica_code_cond = "and os_netrica_code = '{os_netrica_code}'".format(os_netrica_code=os_netrica_code)
+        query = query_counts_on_date.format(logger_table=get_logger_table_name(),
+                                            os_netrica_code_cond=os_netrica_code_cond,
                                             start_date=date_str)
-        # колона os_count, потому что для нескольких подразделений м.б. несколько кодов коек (group by)
-        columns = ['id', 'netrica_id', 'createDatetime', 'modifyDatetime', 'netricaBed_code', 'os_count',
-                   'org_netrica_code', ]
+        columns = ['netrica_id', 'createDatetime', 'netricaBed_code',
+                   'os_netrica_code']
         columns.extend(self.cdf['json_names'])
         with db.cursor() as cur:
             cur.execute(query)
@@ -491,7 +517,7 @@ class CBedsExchange(object):
             date_utc = date_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
         else:
             self.logger.debug(
-                u'Записи отсутствуют после даты ' + date_str + u' (местное время)')
+                u'Записи с датой большей или равной дате ' + date_str + u' отсутствуют (местное время)')
             return None
         bundle_json = []
         for rec in records:
@@ -519,7 +545,7 @@ class CBedsExchange(object):
                     "resourceType": "HealthcareService",
                     "extension": extension,
                     "providedBy": {
-                        "reference": "Organization/" + config.ORGANISATION
+                        "reference": "Organization/" + os_netrica_code
                     },
                     "characteristic": [
                         {
@@ -543,6 +569,55 @@ class CBedsExchange(object):
         self.logger.debug(u', '.join(msg_list))
         self.logger.debug(u'Собраны данные в JSON формате')
         return bundle_json
+
+    def parse_netrica_codes(self, date, netrica_codes):
+        u"""
+            Делает из строки гуидов организаций и подструктур лист гуидов только оподструктур
+        :param netrica_codes: - строка переданных гуидов
+        :param date: - дата в локальном времени, тип Datetime
+        :return: лист гуидов уже только подструктур (orgStructure)
+        """
+        db = self.db
+        date_str = date.strftime("%Y-%m-%dT%H:%M:%S")
+        netrica_codes_splited = netrica_codes.split(',')
+        if netrica_codes:
+            query = \
+                '''
+                    select distinct os_netrica_code
+                    from {logger_table}
+                    where
+                        createDatetime >= '{start_date}'
+                        and (org_netrica_code in ({netrica_codes})
+                                        or os_netrica_code in ({netrica_codes}));
+                '''
+        else:
+            # если гуиды не заданы, возвращяем первые после заданной даты записи
+            query = \
+                '''
+                    select distinct os_netrica_code
+                    from {logger_table}
+                    where
+                        createDatetime =
+                        (select createDatetime
+                            from {logger_table}
+                            where createDatetime >= '{start_date}'
+                            limit 1);
+                '''
+        netrica_codes_str = ', '.join(["'" + code + "'" for code in netrica_codes_splited])
+        query = query.format(logger_table=get_logger_table_name(), netrica_codes=netrica_codes_str, start_date=date_str)
+        with db.cursor() as cur:
+                cur.execute(query)
+                records = cur.fetchall()
+                if len(records) == 0:
+                    self.logger.debug(
+                        u'Записи с датой большей или равной дате ' + date_str + u' отсутствуют (местное время)')
+                    return []
+                if netrica_codes and len(records) < len(netrica_codes_splited):
+                    self.logger.debug(
+                        u'Один или несколько giud-ов не найдено в таблице логгера на дату большую или равную дате '
+                            + date_str + u' (местное время)')
+                    return []
+        return [rec[0] for rec in records]
 
 
 class Dataframe(dict):
@@ -582,9 +657,10 @@ def strptime_default(datetime_str, format, default=None):
         return d
 
 
-def wsgi_app(start_date, db=None, db_logger=None, data=None):
+def wsgi_app(start_date, netrica_codes, db=None, db_logger=None, data=None):
     # start_date - дата в UTC времени типа string, формата 'yyyy-MM-ddThh:mm:ssZ'
-    def send_request(start_date, db, db_logger, data=None):
+    # netrica_codes - строка переданных гуидов
+    def send_request(start_date, netrica_codes, db, db_logger, data=None):
         if not data:
             data = CBedsExchange(db, db_logger, get_logger())
         if not start_date:
@@ -599,14 +675,21 @@ def wsgi_app(start_date, db=None, db_logger=None, data=None):
         td = timedelta(minutes=offset)
         start_date_local = start_date + td
         start_date_local.replace(tzinfo=pytz.FixedOffset(offset))
-        result_json = data.get_beds_info(start_date_local)
-        if not result_json:
+        os_netrica_codes = data.parse_netrica_codes(start_date_local, netrica_codes)
+        if not os_netrica_codes:
             return 400
-        result_json = data.send_beds_info(result_json)
-        if result_json and data.save_id_to_db(result_json):
-            status = 200
-        else:
-            status = 500
+        for code in os_netrica_codes:
+            result_json = data.get_beds_info(start_date_local, code)
+            if not result_json:
+                status = 400
+                break
+            result_json = data.send_beds_info(result_json)
+            if result_json and data.save_id_to_db(result_json, code):
+                status = 200
+                continue
+            else:
+                status = 500
+                break
         return status
 
     if not db:
@@ -618,7 +701,7 @@ def wsgi_app(start_date, db=None, db_logger=None, data=None):
             get_logger().exception(e)
             status = 500
         else:
-            status = send_request(start_date, db, db_logger, data)
+            status = send_request(start_date, netrica_codes, db, db_logger, data)
         finally:
             if db is not None:
                 db.close()
@@ -626,7 +709,7 @@ def wsgi_app(start_date, db=None, db_logger=None, data=None):
                 db_logger.close()
             return status
     else:
-        return send_request(start_date, db, db_logger, data)
+        return send_request(start_date, netrica_codes, db, db_logger, data)
 
 
 def main():
@@ -647,6 +730,12 @@ def main():
                         '-d',
                         dest='start_date',
                         help='start_date',
+                        action='store',
+                        default=False)
+    parser.add_argument('--netricacodes',
+                        '-nc',
+                        dest='netrica_codes',
+                        help='netrica_codes',
                         action='store',
                         default=False)
     parser.add_argument('--pidfile',
@@ -678,11 +767,15 @@ def main():
         msgList = []
         if options.send_result:
             date = ''
+            netrica_codes = ''
             if options.start_date:
                 date = options.start_date
-            wsgi_app(date, db, db_logger, data)
+            if options.netrica_codes:
+                netrica_codes = options.netrica_codes
+            wsgi_app(date, netrica_codes, db, db_logger, data)
         if options.collect_beds_fund:
-            data.save_info_to_logger_db()
+            for org in config.ORGANISATIONS:
+                data.save_info_to_logger_db(org)
         if msgList:
             logger.info('\n'.join([''] + msgList + ['*' * 120]))
     except Exception as e:
