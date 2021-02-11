@@ -539,7 +539,7 @@ class CBedsExchange(object):
                     "url": self.cdf['json_names'][j],
                     "valueInteger": count
                 })
-                msg_list.append(self.cdf['json_names'][j] + u' = ' + str(count))
+                msg_list.extend([self.cdf['json_names'][j] + u' = ' + str(count)])
             resource = {
                 "resource": {
                     "resourceType": "HealthcareService",
@@ -561,12 +561,12 @@ class CBedsExchange(object):
                 }
             }
             bundle_json.append(resource)
+            self.logger.debug(u', '.join(msg_list))
         bundle_json = {
             "resourceType": "Bundle",
             "type": "transaction",
             "entry": bundle_json
         }
-        self.logger.debug(u', '.join(msg_list))
         self.logger.debug(u'Собраны данные в JSON формате')
         return bundle_json
 
