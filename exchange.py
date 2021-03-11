@@ -443,7 +443,7 @@ class CBedsExchange(object):
             org_netrica_code = str(rec.get('org_netrica_code'))
             # количество детских коек смотрим по OrgStructure.net_id, т.к. age не заполняется
             net_id = rec.get('net_id')
-            self.logger.debug(u'Код профиля коек: ' + str(bed_netrica_code) + u', подраздеделие: ' + str(org_structure_id))
+            self.logger.debug(u'Код профиля коек: ' + str(bed_netrica_code) + u', подразделение: ' + str(org_structure_id))
             insert_cols = {
                 'netrica_id': "''",
                 'orgStructure_id': str(org_structure_id),
@@ -455,6 +455,7 @@ class CBedsExchange(object):
             }
             msg_list = []
             for j in range(len(self.cdf['json_names'])):
+                # если детское отделение, то только детские койки
                 if net_id == 2 and self.cdf['json_names'][j] in ('FreeBedCountFemale', 'FreeBedCountMale'):
                     count = 0
                 elif net_id != 2 and self.cdf['json_names'][j] == 'FreeBedCountChild':
@@ -466,7 +467,19 @@ class CBedsExchange(object):
                         cur.execute(query)
                         count = cur.fetchone()[0]
                 insert_cols[self.cdf['json_names'][j]] = str(count)
-                msg_list.append(self.cdf['json_names'][j] + u' = ' + str(count))
+                # msg_list.append(self.cdf['json_names'][j] + u' = ' + str(count))
+
+            # если койки с sex=0 (бесполые), то делим пополам между М и Ж
+            if net_id != 2:
+                free_bed_count = int(insert_cols['FreeBedCount'])
+                free_bed_count_male = int(insert_cols['FreeBedCountMale'])
+                free_bed_count_female = int(insert_cols['FreeBedCountFemale'])
+                free_bed_count_female = free_bed_count_female + (
+                            free_bed_count - free_bed_count_male - free_bed_count_female) // 2
+                insert_cols['FreeBedCountFemale'] = str(free_bed_count_female)
+                insert_cols['FreeBedCountMale'] = str(free_bed_count - free_bed_count_female)
+            msg_list = [self.cdf['json_names'][j] + u' = ' + insert_cols[self.cdf['json_names'][j]] for j in
+                        range(len(self.cdf['json_names']))]
             self.logger.debug(u', '.join(msg_list))
             self.logger.debug(u'Запись данных в базу данных ' + config.LOGGER_DB_NAME)
             columns = ', '.join(insert_cols.keys())
@@ -781,10 +794,13 @@ def main():
     except Exception as e:
         logger.exception(e)
     finally:
-        if db is not None:
-            db.close()
-        if db_logger is not None:
-            db_logger.close()
+        try:
+            if db is not None:
+                db.close()
+            if db_logger is not None:
+                db_logger.close()
+        except Exception as e:
+            pass
         remove_pid_file(options.pid_filename)
 
 
