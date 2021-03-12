@@ -292,6 +292,7 @@ class CBedsExchange(object):
                     AND isHospitalBedBusy(oshb.id, STR_TO_DATE('{date}', '%Y-%m-%dT%H:%i:%s'));
             ''',
             # Количество занятых коек на начало текущих суток
+            # *просто количество занятых коек
             '''
                 select count(*)
                 from OrgStructure_HospitalBed as oshb
@@ -300,7 +301,8 @@ class CBedsExchange(object):
                 where
                     os.id = {OrgStructure_id} 
                     AND oshb.isPermanent = 1
-                    AND isHospitalBedBusy(oshb.id, DATE_ADD(CURDATE(), INTERVAL "00:00:00" HOUR_SECOND));
+                    AND hbp.netrica_Code = {netrica_bed_Code}
+                    AND isHospitalBedBusy(oshb.id, STR_TO_DATE('{date}', '%Y-%m-%dT%H:%i:%s'));
             ''',
             # Количество занятых коек на начало истекших суток
             '''
